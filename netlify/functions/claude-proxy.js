@@ -1,15 +1,22 @@
 /**
- * Netlify serverless function: claude-proxy
+ * claude-proxy.js — Netlify serverless function
  * Proxies requests to the Anthropic API, adding the API key server-side.
  *
- * Deploy steps:
- *  1. Add ANTHROPIC_API_KEY to Netlify → Site Settings → Environment Variables
- *  2. This file lives at:  netlify/functions/claude-proxy.js
- *  3. The HTML calls:      POST /.netlify/functions/claude-proxy
+ * Environment variables:
+ *   ANTHROPIC_API_KEY — your key from console.anthropic.com
  */
 
 exports.handler = async function (event) {
-  // Only accept POST
+
+  // Handle CORS preflight — must return 200 with CORS headers
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers: corsHeaders(),
+      body: '',
+    };
+  }
+
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -18,19 +25,13 @@ exports.handler = async function (event) {
     };
   }
 
-  // Handle CORS preflight
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: corsHeaders(), body: '' };
-  }
-
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
       headers: corsHeaders(),
       body: JSON.stringify({
-        error: 'ANTHROPIC_API_KEY environment variable is not set. ' +
-               'Add it in Netlify → Site Settings → Environment Variables.',
+        error: 'ANTHROPIC_API_KEY is not configured.',
       }),
     };
   }
@@ -50,10 +51,9 @@ exports.handler = async function (event) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Content-Type':            'application/json',
-        'x-api-key':               apiKey,
-        'anthropic-version':       '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
+        'Content-Type':      'application/json',
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
     });
