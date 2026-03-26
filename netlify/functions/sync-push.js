@@ -65,7 +65,7 @@ exports.handler = async function (event) {
         'Authorization': `Bearer ${redisToken}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify(JSON.stringify(payload)),
+      body: JSON.stringify(payload),
     });
 
     if (!redisRes.ok) {
