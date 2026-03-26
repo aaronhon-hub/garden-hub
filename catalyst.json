@@ -1,7 +1,6 @@
 {
   "projectname": "garden-hub",
   "projectid": "919188578",
-  "comment": "Fill in projectid after creating the project in Catalyst console. Get it from the URL: console.catalyst.zoho.com/baas/<id>/..."
   "functions": {
     "catalyst_node_runtime": "v18.x",
     "functions": [
