@@ -1,49 +1,78 @@
 /**
- * sync-push.js — write garden state to Netlify Blobs
+ * sync-push.js — Netlify serverless function
+ *
+ * Saves the full garden state to Upstash Redis via REST API.
+ * No npm dependencies — uses native fetch() only.
+ *
+ * Environment variables (Netlify → Site Settings → Environment Variables):
+ *   SYNC_PASSWORD       — shared secret you choose
+ *   UPSTASH_REDIS_URL   — from Upstash console → Redis → REST API tab
+ *   UPSTASH_REDIS_TOKEN — from Upstash console → Redis → REST API tab
+ *
+ * Get a free Upstash Redis database at: https://console.upstash.com
  *
  * POST /.netlify/functions/sync-push
  * Body: { password, slot?, data }
- *   slot  — storage key suffix, default "main"
- *   data  — full garden state JSON object
- *
- * Env vars required:
- *   SYNC_PASSWORD   — shared secret you choose
  */
-
-const { getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: corsHeaders(), body: '' };
   }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: corsHeaders(), body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 405, headers: corsHeaders(),
+      body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+
+  const syncPwd    = process.env.SYNC_PASSWORD;
+  const redisUrl   = process.env.UPSTASH_REDIS_URL;
+  const redisToken = process.env.UPSTASH_REDIS_TOKEN;
+
+  if (!syncPwd || !redisUrl || !redisToken) {
+    return { statusCode: 500, headers: corsHeaders(), body: JSON.stringify({
+      error: 'Missing environment variables. Required: SYNC_PASSWORD, ' +
+             'UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN — ' +
+             'set them in Netlify → Site Settings → Environment Variables.'
+    })};
   }
 
   let body;
   try { body = JSON.parse(event.body); }
-  catch { return { statusCode: 400, headers: corsHeaders(), body: JSON.stringify({ error: 'Invalid JSON' }) }; }
+  catch { return { statusCode: 400, headers: corsHeaders(),
+    body: JSON.stringify({ error: 'Invalid JSON body' }) }; }
 
   const { password, slot = 'main', data } = body;
 
-  if (!process.env.SYNC_PASSWORD) {
-    return { statusCode: 500, headers: corsHeaders(),
-      body: JSON.stringify({ error: 'SYNC_PASSWORD env var not set. Add it in Netlify → Site Settings → Environment Variables.' }) };
-  }
-  if (password !== process.env.SYNC_PASSWORD) {
-    return { statusCode: 401, headers: corsHeaders(), body: JSON.stringify({ error: 'Incorrect sync password.' }) };
+  if (password !== syncPwd) {
+    return { statusCode: 401, headers: corsHeaders(),
+      body: JSON.stringify({ error: 'Incorrect sync password.' }) };
   }
   if (!data || typeof data !== 'object') {
-    return { statusCode: 400, headers: corsHeaders(), body: JSON.stringify({ error: 'Missing data payload.' }) };
+    return { statusCode: 400, headers: corsHeaders(),
+      body: JSON.stringify({ error: 'Missing data payload.' }) };
   }
 
-  // Attach server-side timestamp
   const serverSavedAt = new Date().toISOString();
   const payload = { ...data, _syncMeta: { savedAt: serverSavedAt, slot } };
+  const key     = `garden-hub-${slot}`;
 
   try {
-    const store = getStore('garden-hub');
-    await store.setJSON(`state-${slot}`, payload);
+    // Upstash Redis REST: SET key value
+    // The value must be a JSON string — we stringify the payload
+    const redisRes = await fetch(`${redisUrl}/set/${encodeURIComponent(key)}`, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify(JSON.stringify(payload)),
+    });
+
+    if (!redisRes.ok) {
+      const errText = await redisRes.text();
+      throw new Error(`Redis SET failed (${redisRes.status}): ${errText}`);
+    }
+
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders() },
@@ -51,13 +80,13 @@ exports.handler = async function (event) {
     };
   } catch (err) {
     return { statusCode: 502, headers: corsHeaders(),
-      body: JSON.stringify({ error: `Blob write failed: ${err.message}` }) };
+      body: JSON.stringify({ error: `Storage write failed: ${err.message}` }) };
   }
 };
 
 function corsHeaders() {
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin':  '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
