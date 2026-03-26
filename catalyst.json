@@ -7,18 +7,21 @@
       {
         "name": "claude-proxy",
         "type": "Advanced IO",
+        "stack": "nodejs20",
         "memory": 256,
         "timeout": 10
       },
       {
         "name": "sync-push",
         "type": "Advanced IO",
+        "stack": "nodejs20",
         "memory": 256,
         "timeout": 10
       },
       {
         "name": "sync-pull",
         "type": "Advanced IO",
+        "stack": "nodejs20",
         "memory": 256,
         "timeout": 10
       }
